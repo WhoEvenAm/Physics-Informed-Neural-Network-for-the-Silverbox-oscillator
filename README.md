@@ -1,109 +1,174 @@
-# Silverbox oscillator: Task 5
+# Neural Dynamics Modeling of the Silverbox Oscillator
 
-A PyTorch neural acceleration model for the Silverbox oscillator, with RK4
-simulation, architecture comparisons, and continuous free-run evaluation on
-test data.
+A PyTorch implementation of a neural acceleration model for the Silverbox
+nonlinear oscillator. The model combines a learned acceleration function with
+an explicit state equation and fourth-order Runge-Kutta integration to simulate
+the measured output from the applied input voltage.
 
-The selected network has two hidden layers of 64 neurons. Across ten completed
-runs, it gives a training RMSE of **2.914 mV** and a test RMSE of **11.498 mV**.
-It uses AdamW, learning rate 0.003, 3,000 updates, 128-sample windows, and batch
-size 8. Evaluation starts at the beginning of the excerpt and carries the state
-continuously into the test segment.
+The repository includes training and evaluation scripts, ten completed
+experiments, saved model weights, prediction traces, and a
+[technical report](output/pdf/task5_report.pdf).
 
-Read the [written report](output/pdf/task5_report.pdf), inspect the
-[experiment table](output/experiments/20261011_220640/results.csv), or view the
-[test prediction plot](output/best_test_predictions.png).
+## Results
 
-The assignment chooses the lowest test RMSE, so this test record also serves
-for model selection. It is not a separate untouched final evaluation set.
+The selected model uses two hidden layers of 64 neurons and 4,481 trainable
+parameters. Its saved checkpoint reproduces the following continuous free-run
+results:
 
-Use Python 3.12 and the project's virtual environment. The existing installed
-package versions are recorded in `requirements.txt`.
+| Metric | Value |
+|---|---:|
+| Training RMSE | 2.914 mV |
+| Test RMSE | 11.498 mV |
+| Zero-prediction test RMSE | 60.492 mV |
+| Test RMSE reduction relative to the zero baseline | 81.0% |
 
-From the project folder, run the loader with:
+RMSE measures the root mean squared difference between predicted and measured
+output voltage. Lower values indicate closer agreement.
 
-```sh
-source .venv/bin/activate
-python src/data_loader.py
+![Measured and predicted test output, a short zoom, and signed prediction error](output/best_test_predictions.png)
+
+The model is selected by the lowest test RMSE across the completed experiments.
+Consequently, the reported test record also serves for model selection; it is
+not an independent final holdout. Measured test outputs are not used in gradient
+updates or as state corrections during simulation.
+
+## Method
+
+The network receives the state and input in the order `[y, v, u]` and predicts
+one acceleration value, `alpha_theta(y, v, u)`. Hidden layers use Tanh
+activations, and the output layer is linear. The resulting state equation is:
+
+```text
+dy/dt = v
+dv/dt = alpha_theta(y, v, u)
 ```
 
-To recreate the environment if it is missing:
+RK4 advances this state at the dataset's sampling interval, with linear
+interpolation of the known input between adjacent samples. Input and
+acceleration scales are estimated from training-only RMS magnitudes.
+
+Training minimizes position MSE over randomly sampled windows contained entirely
+within the training record. Each window starts from its measured position and
+a finite-difference velocity estimate. Subsequent states are obtained by
+integration, and gradients propagate through the RK4 simulation.
+
+Evaluation uses one continuous simulation across the full record. It starts
+from the first training sample and carries the predicted state across the
+training/test boundary without resetting it.
+
+## Data
+
+The included [`SNLS80mV.mat`](data/SNLS80mV.mat) record contains the Silverbox
+input voltage in channel `V1` and output voltage in channel `V2`.
+
+| Property | Value |
+|---|---|
+| Sampling frequency | 610.35 Hz |
+| Selected Python slice | `[42650:46746]` |
+| Record length | 4,096 samples |
+| Training segment | First 3,072 samples |
+| Test segment | Last 1,024 samples |
+
+Each signal is centered using its mean over the full selected excerpt. This
+preprocessing uses the full record, including the test segment. The additional
+RMS scales used by the network are computed only from training data.
+
+## Installation
+
+Use Python 3.12. From the repository root, create a virtual environment and
+install the recorded dependencies:
 
 ```sh
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
-VS Code is configured to use `.venv/bin/python`. If it previously selected a
-different interpreter, run **Python: Select Interpreter** and choose that path,
-then open a new terminal.
+## Usage
 
-The loader reads `data/SNLS80mV.mat` relative to the project location, so it can
-also be launched from another working directory. It selects 4,096 samples,
-splits them into 3,072 training and 1,024 test samples, and centers both splits
-using the means of the full 4,096-sample excerpt, as required by the homework.
-
-To run the introductory training loop, run:
-
-```sh
-.venv/bin/python src/train.py
-```
-
-This script samples 64-point windows across the training record, using 3,000 Adam
-updates at a learning rate of 0.01. Every window is contained in the training split.
-It prints sampled-window losses and the first window's error before and after
-training, along with the number of training samples covered by sampled windows.
-Input and acceleration scales are RMS magnitudes estimated from training data.
-The script also reports physical signal durations, training-loop elapsed time,
-average time per optimizer update, and free-run evaluation elapsed time.
-After training, it runs continuously through all 4,096 samples from the initial
-state, without resetting at the test boundary. It reports separate full free-run
-training and test RMSE values, with zero-prediction baselines for comparison.
-It saves a new `output/test_predictions_<timestamp>.png` on each completed run,
-then displays the plot. Close the plot window to let the script finish. Timestamps
-use Yerevan time, and previous images are preserved. The plot shows measured and predicted test output,
-a zoom of the first 0.15 seconds, and the prediction error over the full test
-segment. The graph uses the same continuous free run as the reported test RMSE.
-Each launch of `train.py` creates a new model.
-
-Run the architecture/hyperparameter study with:
-
-```sh
-.venv/bin/python src/experiments.py
-```
-
-This tests hidden widths `(32, 32)`, `(64, 64)`, and `(32, 32, 32)` with three
-training settings each, plus the original tutorial configuration: ten runs in
-total. It saves configurations, loss histories, weights, timing, and continuous
-train/test RMSE in a timestamped `output/experiments/`
-folder. A separate seeded generator makes sampled windows independent of the
-network architecture. The assignment selects the model with the smallest test
-RMSE; measured test positions are never used for training updates.
-
-The selected weights are saved as `output/best_model.pt`. Evaluate them without
-retraining using:
+### Evaluate the saved model
 
 ```sh
 .venv/bin/python src/test.py
 ```
 
-Add `--no-show` to save the graph without opening a window. The saved checkpoint
-contains its architecture, input/output scale buffers, weights, and settings.
-The selected full trace and plot are also saved as `output/best_predictions.csv`
-and `output/best_test_predictions.png`.
+This loads `output/best_model.pt`, reports training and test RMSE, and saves and
+displays a new comparison plot. Use `--no-show` to save the plot without opening
+a window. To evaluate another checkpoint:
 
-Run the evaluation/checkpoint checks with:
+```sh
+.venv/bin/python src/test.py --checkpoint path/to/model.pt --no-show
+```
+
+### Train a baseline model
+
+```sh
+.venv/bin/python src/train.py
+```
+
+The baseline uses hidden widths `(32, 32)`, Adam with learning rate `0.01`,
+3,000 updates, and 64-sample training windows. Each launch trains a new model,
+reports loss and timing information, and saves a timestamped test plot. Close
+the displayed plot window to let the script finish.
+
+### Run the experiment comparison
+
+```sh
+.venv/bin/python src/experiments.py
+```
+
+The comparison evaluates `(32, 32)`, `(64, 64)`, and `(32, 32, 32)` architectures
+under three training configurations each, plus the baseline's original random
+sampling sequence. Configurations, loss histories, checkpoints, timing, and
+RMSE are saved to a timestamped directory under `output/experiments/`.
+The run with the lowest test RMSE updates the selected checkpoint and prediction
+artifacts under `output/`.
+
+The selected configuration is:
+
+| Setting | Value |
+|---|---|
+| Optimizer | AdamW |
+| Learning rate | 0.003 |
+| Weight decay | 0.0001 |
+| Optimizer updates | 3,000 |
+| Rollout length | 128 samples |
+| Batch size | 8 windows |
+| Weight initialization seed | 0 |
+| Window sampling seed | 1 |
+
+See the [complete experiment table](output/experiments/20261011_220640/results.csv)
+for the recorded comparison.
+
+### Run verification checks
 
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-To generate the written Task 5 PDF after completing the comparisons:
+The checks verify checkpoint restoration, continuous state propagation, and
+that changing measured test outputs changes the score without changing the
+predicted trajectory.
+
+### Generate the technical report
 
 ```sh
 .venv/bin/python -m pip install -r requirements-report.txt
 .venv/bin/python src/build_report.py --repository-url https://github.com/WhoEvenAm/Physics-Informed-Neural-Network-for-the-Silverbox-oscillator
 ```
 
-The report is saved to `output/pdf/task5_report.pdf`. Without a repository URL,
-it is clearly marked as a draft. Task 6's LangGraph system is a separate task.
+The report is generated from saved experiment results and prediction artifacts
+under `output/pdf/`. Omitting the repository URL produces a draft.
+
+## Repository structure
+
+| Path | Purpose |
+|---|---|
+| `src/data_loader.py` | Data extraction, centering, and chronological splitting |
+| `src/src/silverbox_model.py` | Acceleration network, state derivative, and RK4 rollout |
+| `src/train.py` | Baseline training and prediction plots |
+| `src/training_utils.py` | Shared training, evaluation, and checkpoint utilities |
+| `src/experiments.py` | Architecture and training-configuration comparison |
+| `src/test.py` | Evaluation of saved checkpoints |
+| `src/build_report.py` | PDF report generation |
+| `tests/` | Evaluation and checkpoint verification |
+| `output/` | Saved models, results, prediction traces, and report |
