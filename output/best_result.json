@@ -1,0 +1,22 @@
+{
+  "name": "64x64_setting3",
+  "architecture": "64-64",
+  "optimizer": "AdamW",
+  "learning_rate": 0.003,
+  "steps": 3000,
+  "rollout_length": 128,
+  "batch_size": 8,
+  "seed": 0,
+  "parameters": 4481,
+  "training_seconds": 114.26325716699648,
+  "covered_training_samples": 3072,
+  "checkpoint": "output/experiments/20261011_220640/64x64_setting3.pt",
+  "status": "complete",
+  "train_rmse": 0.002914461772888899,
+  "test_rmse": 0.011498318053781986,
+  "zero_train_rmse": 0.05302076041698456,
+  "zero_test_rmse": 0.060491856187582016,
+  "evaluation_seconds": 0.3377918329933891,
+  "window_seed": 1,
+  "results_directory": "output/experiments/20261011_220640"
+}

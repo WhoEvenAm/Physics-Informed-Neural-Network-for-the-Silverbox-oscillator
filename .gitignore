@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+tmp/
+.pytest_cache/
+# The downloaded benchmark examples are not used by this implementation.
+src/nonlinear_benchmarks-master/
+# Keep the selected comparison plot; routine evaluation plots stay local.
+output/test_predictions*.png
